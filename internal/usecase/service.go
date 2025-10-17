@@ -12,6 +12,7 @@ type ItemUsecase interface {
 	GetAllItems(ctx context.Context) ([]*entity.Item, error)
 	GetItemByID(ctx context.Context, id int64) (*entity.Item, error)
 	CreateItem(ctx context.Context, input CreateItemInput) (*entity.Item, error)
+	UpdateItem(ctx context.Context, id int64, input UpdateItemInput) (*entity.Item, error)
 	DeleteItem(ctx context.Context, id int64) error
 	GetCategorySummary(ctx context.Context) (*CategorySummary, error)
 }
@@ -22,6 +23,12 @@ type CreateItemInput struct {
 	Brand         string `json:"brand"`
 	PurchasePrice int    `json:"purchase_price"`
 	PurchaseDate  string `json:"purchase_date"`
+}
+
+type UpdateItemInput struct {
+	Name          *string `json:"name,omitempty"`
+	Brand         *string `json:"brand,omitempty"`
+	PurchasePrice *int    `json:"purchase_price,omitempty"`
 }
 
 type CategorySummary struct {
@@ -85,6 +92,27 @@ func (u *itemUsecase) CreateItem(ctx context.Context, input CreateItemInput) (*e
 	return createdItem, nil
 }
 
+func (u *itemUsecase) UpdateItem(ctx context.Context, id int64, input UpdateItemInput) (*entity.Item, error) {
+	if id <= 0 {
+		return nil, domainErrors.ErrInvalidInput
+	}
+
+	// バリデーション
+	if err := validateUpdateItemInput(input); err != nil {
+		return nil, fmt.Errorf("%w: %s", domainErrors.ErrInvalidInput, err.Error())
+	}
+
+	updatedItem, err := u.itemRepo.Update(ctx, id, input.Name, input.Brand, input.PurchasePrice)
+	if err != nil {
+		if domainErrors.IsNotFoundError(err) {
+			return nil, domainErrors.ErrItemNotFound
+		}
+		return nil, fmt.Errorf("failed to update item: %w", err)
+	}
+
+	return updatedItem, nil
+}
+
 func (u *itemUsecase) DeleteItem(ctx context.Context, id int64) error {
 	if id <= 0 {
 		return domainErrors.ErrInvalidInput
@@ -131,4 +159,37 @@ func (u *itemUsecase) GetCategorySummary(ctx context.Context) (*CategorySummary,
 		Categories: summary,
 		Total:      total,
 	}, nil
+}
+
+func validateUpdateItemInput(input UpdateItemInput) error {
+	// 更新するフィールドが少なくとも1つ必要
+	if input.Name == nil && input.Brand == nil && input.PurchasePrice == nil {
+		return fmt.Errorf("no fields to update")
+	}
+
+	if input.Name != nil {
+		if *input.Name == "" {
+			return fmt.Errorf("name cannot be empty")
+		}
+		if len(*input.Name) > 100 {
+			return fmt.Errorf("name must be 100 characters or less")
+		}
+	}
+
+	if input.Brand != nil {
+		if *input.Brand == "" {
+			return fmt.Errorf("brand cannot be empty")
+		}
+		if len(*input.Brand) > 100 {
+			return fmt.Errorf("brand must be 100 characters or less")
+		}
+	}
+
+	if input.PurchasePrice != nil {
+		if *input.PurchasePrice < 0 {
+			return fmt.Errorf("purchase_price must be 0 or greater")
+		}
+	}
+
+	return nil
 }
