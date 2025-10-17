@@ -93,6 +93,51 @@ func (h *ItemHandler) CreateItem(c echo.Context) error {
 	return c.JSON(http.StatusCreated, item)
 }
 
+func (h *ItemHandler) UpdateItem(c echo.Context) error {
+	idStr := c.Param("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error: "invalid item ID",
+		})
+	}
+
+	var input usecase.UpdateItemInput
+	if err := c.Bind(&input); err != nil {
+		return c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error: "invalid request format",
+		})
+	}
+
+	// バリデーション
+	if validationErrors := validateUpdateItemInput(input); len(validationErrors) > 0 {
+		return c.JSON(http.StatusBadRequest, ErrorResponse{
+			Error:   "validation failed",
+			Details: validationErrors,
+		})
+	}
+
+	item, err := h.itemUsecase.UpdateItem(c.Request().Context(), id, input)
+	if err != nil {
+		if domainErrors.IsNotFoundError(err) {
+			return c.JSON(http.StatusNotFound, ErrorResponse{
+				Error: "item not found",
+			})
+		}
+		if domainErrors.IsValidationError(err) {
+			return c.JSON(http.StatusBadRequest, ErrorResponse{
+				Error:   "validation failed",
+				Details: []string{err.Error()},
+			})
+		}
+		return c.JSON(http.StatusInternalServerError, ErrorResponse{
+			Error: "failed to update item",
+		})
+	}
+
+	return c.JSON(http.StatusOK, item)
+}
+
 func (h *ItemHandler) DeleteItem(c echo.Context) error {
 	idStr := c.Param("id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
@@ -146,6 +191,40 @@ func validateCreateItemInput(input usecase.CreateItemInput) []string {
 	}
 	if input.PurchasePrice < 0 {
 		errs = append(errs, "purchase_price must be 0 or greater")
+	}
+
+	return errs
+}
+
+func validateUpdateItemInput(input usecase.UpdateItemInput) []string {
+	var errs []string
+
+	// 更新するフィールドが少なくとも1つ必要
+	if input.Name == nil && input.Brand == nil && input.PurchasePrice == nil {
+		errs = append(errs, "no fields to update")
+		return errs
+	}
+
+	if input.Name != nil {
+		if *input.Name == "" {
+			errs = append(errs, "name cannot be empty")
+		} else if len(*input.Name) > 100 {
+			errs = append(errs, "name must be 100 characters or less")
+		}
+	}
+
+	if input.Brand != nil {
+		if *input.Brand == "" {
+			errs = append(errs, "brand cannot be empty")
+		} else if len(*input.Brand) > 100 {
+			errs = append(errs, "brand must be 100 characters or less")
+		}
+	}
+
+	if input.PurchasePrice != nil {
+		if *input.PurchasePrice < 0 {
+			errs = append(errs, "purchase_price must be 0 or greater")
+		}
 	}
 
 	return errs
