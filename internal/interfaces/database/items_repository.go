@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	"Aicon-assignment/internal/domain/entity"
@@ -136,6 +137,47 @@ func (r *ItemRepository) GetSummaryByCategory(ctx context.Context) (map[string]i
 	}
 
 	return summary, nil
+}
+
+func (r *ItemRepository) Update(ctx context.Context, id int64, name *string, brand *string, purchasePrice *int) (*entity.Item, error) {
+	// Build dynamic SET clause
+	setParts := make([]string, 0, 3)
+	args := make([]interface{}, 0, 4)
+
+	if name != nil {
+		setParts = append(setParts, "name = ?")
+		args = append(args, *name)
+	}
+	if brand != nil {
+		setParts = append(setParts, "brand = ?")
+		args = append(args, *brand)
+	}
+	if purchasePrice != nil {
+		setParts = append(setParts, "purchase_price = ?")
+		args = append(args, *purchasePrice)
+	}
+
+	if len(setParts) == 0 {
+		return r.FindByID(ctx, id)
+	}
+
+	query := "UPDATE items SET " + strings.Join(setParts, ", ") + " WHERE id = ?"
+	args = append(args, id)
+
+	result, err := r.Execute(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s", domainErrors.ErrDatabaseError, err.Error())
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return nil, fmt.Errorf("%w: failed to get rows affected: %s", domainErrors.ErrDatabaseError, err.Error())
+	}
+	if rows == 0 {
+		return nil, domainErrors.ErrItemNotFound
+	}
+
+	return r.FindByID(ctx, id)
 }
 
 func scanItem(scanner interface {
